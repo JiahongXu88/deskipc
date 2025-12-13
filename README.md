@@ -160,19 +160,23 @@ cmake --build build -j
 ```text
 deskipc/
 ├── core/
-│   ├── include/deskipc/          # Public APIs
-│   ├── transport/                # namedpipe / uds / tcp
-│   ├── protocol/                 # framing / codec
-│   ├── rpc/                      # client / server, timeout
-│   ├── runtime/                  # io loop / timers / thread pool
-│   └── common/                   # logging, errors, utils
+│   ├── include/deskipc/          # Public APIs（后续再整理成对外头）
+│   ├── transport/
+│   │   └── tcp/
+│   │       └── net.h             # 原生socket跨平台工具
+│   ├── protocol/
+│   │   ├── frame_header.h
+│   │   └── framing.h/.cpp
+│   ├── rpc/
+│   ├── runtime/
+│   └── common/
 ├── examples/
-│   ├── worker_cli/               # Worker process (RPC server)
-│   ├── parent_cli/               # Parent process (RPC client)
-│   └── parent_qt_gui/            # Qt GUI demo (optional)
-├── tests/                        # Unit tests
-├── benchmarks/                   # Benchmarks
-└── docs/                         # protocol.md / architecture.md
+│   ├── worker_cli/
+│   ├── parent_cli/
+│   └── parent_qt_gui/
+├── tests/
+├── benchmarks/
+└── docs/
 ```
 
 ## Roadmap
