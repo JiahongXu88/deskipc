@@ -57,28 +57,46 @@ DeskIPC 的目标是：
 
 ```mermaid
 flowchart TB
-  subgraph GUI["GUI Process (Qt / CLI / Flutter)"]
+
+  %% =======================
+  %% GUI Process
+  %% =======================
+  subgraph GUI["GUI Process"]
+    GUI_NOTE["Tech: Qt / CLI / Flutter"]
     UI["UI / Controller"]
     C1["RPC Client"]
-    UI --> C1
+
+    GUI_NOTE --> UI --> C1
   end
 
+  %% =======================
+  %% DeskIPC Core
+  %% =======================
   subgraph CORE["DeskIPC Core"]
     FR["Message Framing"]
     RPC["RPC Layer"]
     EM["Timeout / Error Model"]
     TL["Transport Layer"]
+
     FR --> RPC --> EM --> TL
   end
 
+  %% =======================
+  %% Worker Process
+  %% =======================
   subgraph WORKER["Worker Process"]
+    W_NOTE["Heavy / Unsafe Tasks"]
     S1["RPC Server"]
-    T1["Heavy / Unsafe Tasks"]
-    S1 --> T1
+
+    S1 --> W_NOTE
   end
 
-  C1 -- "RPC (req/resp)" --> FR
+  %% =======================
+  %% Cross-process links
+  %% =======================
+  C1 -- "RPC (req / resp)" --> FR
   TL -- "IPC" --> S1
+
 ```
 
 ---
