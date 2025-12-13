@@ -32,10 +32,69 @@ DeskIPC 是一个 **面向桌面应用的跨进程通信（IPC）与轻量级 RP
 DeskIPC 正是在这样的背景下设计的。
 DeskIPC 的目标并不是构建一个分布式 RPC 框架，而是：
 
-- >**为桌面应用提供一套工程可控、边界清晰、易于调试的 IPC + RPC 基础设施。**
+>**为桌面应用提供一套工程可控、边界清晰、易于调试的 IPC + RPC 基础设施。**
 
 它关注的是本机多进程环境中的核心问题：
-- 显式的消息边界、清晰的请求-响应模型、对子进程异常的友好处理，以及尽量少的依赖和可预测的行为。
+>**显式的消息边界、清晰的请求-响应模型、对子进程异常的友好处理，以及尽量少的依赖和可预测的行为。**
+
+---
+
+## Comparison & Positioning
+
+与市面上常见方案相比，DeskIPC 的定位和取舍如下：
+
+### 与 HTTP / gRPC 的对比
+- HTTP / gRPC 面向 跨机器、分布式系统，依赖较重（HTTP/2、Protobuf、运行时复杂）
+- 桌面 IPC 场景更关注 低延迟、可控性和调试便利性
+- DeskIPC 专为本机进程通信设计，不引入网络透明性和分布式复杂度
+
+**结论**
+>**DeskIPC 是“桌面 IPC”，而不是“云端 RPC”。**
+
+### 与 ZeroMQ / nanomsg / NNG 的对比
+- ZeroMQ 等更偏向 底层消息传递原语
+- 请求–响应、超时、错误模型需要开发者自行封装
+- 对桌面多进程的生命周期管理支持有限
+ DeskIPC 在消息传输之上，直接提供：
+- 显式 framing
+- 明确的 request / response RPC 模型
+- 面向工程使用的错误与超时语义
+
+**结论**
+>**ZeroMQ 是通信工具，DeskIPC 是工程化 IPC/RPC 方案。**
+
+### 与 D-Bus 的对比
+- D-Bus 更像**系统级总线**
+- 平台局限明显（主要面向 Linux）
+- 对项目级、多进程 C++ 桌面应用并不友好
+DeskIPC：
+- 跨平台（Windows / Linux / macOS）
+- 作用范围明确，专注于单个应用内部的进程通信
+- 协议与行为完全由项目控制
+
+**结论**
+>**D-Bus 是系统基础设施，DeskIPC 是项目级 IPC。**
+
+### 与 Chromium / Electron 内部 IPC 的对比
+
+- Chromium/CEF 内部 IPC 机制高度复杂，强绑定浏览器架构
+- 不具备通用性，难以抽离复用
+- 学习和维护成本极高
+DeskIPC 的目标是：
+- 独立于具体框架（Qt / CEF / Flutter / CLI）
+- 可作为通用 IPC 基础设施复用
+- 适配真实桌面工程需求
+
+**结论**
+>**Chromium IPC 是内部实现，DeskIPC 是通用方案。**
+
+### DeskIPC 的核心优势
+综合来看，DeskIPC 的主要优势在于：
+- 面向桌面多进程架构：主进程稳定优先，Worker 可随时崩溃或重启
+- 显式协议与消息边界：framing、request_id、超时和错误模型都是一等公民
+- 轻量、可控、易调试：无大型运行时依赖，协议行为清晰可预测
+- 跨平台 IPC 抽象：TCP（调试）、Windows Named Pipe、Unix Domain Socket 统一在同一 RPC 层之下
+- DeskIPC 试图弥补“临时手写 IPC”和“重量级分布式框架”之间的空白，为真实的桌面应用提供一套 简单、可靠且工程友好的 IPC/RPC 基础设施。
 
 ---
 
@@ -138,7 +197,7 @@ flowchart TB
 - CMake >= 3.15
 
 ```bash
-git clone https://github.com/<yourname>/deskipc.git
+git clone https://github.com/JiahongXu88/deskipc.git
 cd deskipc
 cmake -S . -B build
 cmake --build build -j
@@ -146,12 +205,22 @@ cmake --build build -j
 ### Run Examples (CLI)
 
 **启动 Worker（RPC Server）：**
+#### Linux / macOS
 ```bash
 ./build/examples/worker_cli/worker_cli
 ```
+#### Windows(MSVC)
+```bash
+build\examples\worker_cli\Debug\worker_cli.exe
+```
 **启动 Parent（RPC Client）并发起调用:**
+#### Linux / macOS
 ```bash
 ./build/examples/parent_cli/parent_cli
+```
+#### Windows(MSVC)
+```bash
+build\examples\parent_cli\Debug\parent_cli.exe
 ```
 ---
 
