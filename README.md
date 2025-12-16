@@ -245,7 +245,10 @@ deskipc/
 │   └── parent_qt_gui/
 ├── tests/
 ├── benchmarks/
-└── docs/
+├── docs/
+└── third_party/
+    └── nlohmann/
+        └── json.hpp
 ```
 
 ## Roadmap
@@ -276,4 +279,5 @@ deskipc/
 
 ## License
 > MIT License
+
 ---
