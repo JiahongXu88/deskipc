@@ -1,14 +1,10 @@
-#include "protocol/framing.h"
 #include "transport/tcp/net.h"
+#include "rpc/rpc_server.h"
 
 #include <iostream>
-#include <string>
+#include <thread>
 
 using namespace deskipc;
-
-static std::string bytes_to_string(const std::vector<uint8_t>& v) {
-  return std::string(reinterpret_cast<const char*>(v.data()), v.size());
-}
 
 int main() {
   std::string err;
@@ -59,58 +55,28 @@ int main() {
 
   std::cout << "[worker] client connected\n";
 
-  FrameDecoder decoder;
-  uint8_t buf[4096];
+  RpcServer server;
 
-  while (true) {
-    int n = recv_some(cs, buf, sizeof(buf));
-    if (n <= 0) {
-      std::cout << "[worker] disconnected\n";
-      break;
-    }
+  server.on("ping", [](const json&) {
+    return Ok("pong");
+  });
 
-    auto frames = decoder.feed(buf, static_cast<size_t>(n));
-    if (frames.empty() && n > 0) {
-      // could be: incomplete frame; or protocol error cleared buffer
-      // We don't know which here—v0.1: keep going unless socket breaks.
-    }
+  server.on("add", [](const json& params) {
+    int a = params.value("a", 0);
+    int b = params.value("b", 0);
+    return Ok(json{{"sum", a + b}});
+  });
 
-    for (auto& f : frames) {
-      const std::string body = bytes_to_string(f.body);
-      std::cout << "[worker] req_id=" << f.header.request_id << " body=" << body << "\n";
+  server.on("sleep", [](const json& params) {
+    int ms = params.value("ms", 1000);
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+    return Ok("done");
+  });
 
-      // v0.1: simplest dispatch (no JSON parser yet)
-      std::string resp_body;
-      if (body.find("\"method\":\"ping\"") != std::string::npos) {
-        resp_body = R"({"ok":true,"data":"pong"})";
-      } else if (body.find("\"method\":\"add\"") != std::string::npos) {
-        resp_body = R"({"ok":true,"data":{"sum":3}})";
-      } else if (body.find("\"method\":\"sleep\"") != std::string::npos) {
-        resp_body = R"({"ok":true,"data":"done"})";
-      } else {
-        resp_body = R"({"ok":false,"error":{"code":1002,"message":"method_not_found"}})";
-      }
+  server.serve(cs);
 
-      FrameHeader rh{};
-      rh.magic = kMagic;
-      rh.version = kVersion;
-      rh.header_len = kHeaderLen;
-      rh.msg_type = static_cast<uint8_t>(MsgType::kResponse);
-      rh.codec = static_cast<uint8_t>(Codec::kJson);
-      rh.flags = 0;
-      rh.request_id = f.header.request_id;
-      rh.reserved = 0;
-      rh.header_crc32 = 0;
+  std::cout << "[worker] disconnected\n";
 
-      auto out = encode(rh, reinterpret_cast<const uint8_t*>(resp_body.data()), resp_body.size());
-      if (!send_all(cs, out.data(), out.size())) {
-        std::cerr << "[worker] send_all failed\n";
-        break;
-      }
-    }
-  }
-
-  sock_close(cs);
   sock_close(ls);
   net_cleanup();
   return 0;

@@ -1,12 +1,20 @@
-#include "protocol/framing.h"
 #include "transport/tcp/net.h"
+#include "rpc/rpc_client.h"
 
 #include <iostream>
-#include <string>
+#include <vector>
+#include <chrono>
 
 using namespace deskipc;
 
-static uint64_t g_reqid = 1;
+static void print_result(const char* name, const RpcResult& r) {
+  if (r.ok) {
+    std::cout << "[parent] " << name << " => ok=true data=" << r.data.dump() << "\n";
+  } else {
+    std::cout << "[parent] " << name << " => ok=false err_code=" << r.error.code
+              << " err_msg=" << r.error.message << "\n";
+  }
+}
 
 int main() {
   std::string err;
@@ -41,52 +49,78 @@ int main() {
     return 1;
   }
 
-  auto send_req = [&](const std::string& body_json) -> uint64_t {
-    FrameHeader h{};
-    h.magic = kMagic;
-    h.version = kVersion;
-    h.header_len = kHeaderLen;
-    h.msg_type = static_cast<uint8_t>(MsgType::kRequest);
-    h.codec = static_cast<uint8_t>(Codec::kJson);
-    h.flags = 0;
-    h.request_id = g_reqid++;
-    h.reserved = 0;
-    h.header_crc32 = 0;
-
-    auto out = encode(h, reinterpret_cast<const uint8_t*>(body_json.data()), body_json.size());
-    if (!send_all(s, out.data(), out.size())) {
-      std::cerr << "[parent] send_all failed\n";
-      return 0;
-    }
-    std::cout << "[parent] sent req_id=" << h.request_id << " body=" << body_json << "\n";
-    return h.request_id;
-  };
-
-  // Send 3 requests
-  send_req(R"({"method":"ping","params":{}})");
-  send_req(R"({"method":"add","params":{"a":1,"b":2}})");
-  send_req(R"({"method":"sleep","params":{"ms":2000}})");
-
-  FrameDecoder decoder;
-  uint8_t buf[4096];
-  int received = 0;
-
-  while (received < 3) {
-    int n = recv_some(s, buf, sizeof(buf));
-    if (n <= 0) {
-      std::cerr << "[parent] disconnected\n";
-      break;
-    }
-
-    auto frames = decoder.feed(buf, static_cast<size_t>(n));
-    for (auto& f : frames) {
-      std::string body(reinterpret_cast<const char*>(f.body.data()), f.body.size());
-      std::cout << "[parent] got resp req_id=" << f.header.request_id << " body=" << body << "\n";
-      received++;
-    }
+  // ---- v0.2: RpcClient (recv thread + pending + timeout) ----
+  RpcClient client(s);
+  if (!client.start()) {
+    std::cerr << "[parent] client.start() failed\n";
+    sock_close(s);
+    net_cleanup();
+    return 1;
   }
 
-  sock_close(s);
+  // 1) Basic calls (sync) ----------------------------------------------------
+  {
+    auto r1 = client.call("ping", json::object(), 1000);
+    print_result("ping", r1);
+
+    auto r2 = client.call("add", json{{"a", 1}, {"b", 2}}, 1000);
+    print_result("add", r2);
+
+    // timeout demo: worker sleeps 2000ms, timeout 200ms => timeout expected
+    auto r3 = client.call("sleep", json{{"ms", 2000}}, 200);
+    print_result("sleep(timeout=200ms)", r3);
+
+    // allow some time so the late response arrives; it must be DROPPED by client (no crash, no wrong completion)
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+
+  // 2) Simple concurrency demo (same connection, multiple in-flight) ---------
+  // We'll launch a few calls in parallel using std::async; RpcClient is thread-safe for call()
+  // (it uses a pending map + mutex, and a single recv loop).
+  {
+    const int N = 20;
+    std::vector<std::future<RpcResult>> futs;
+    futs.reserve(N);
+
+    auto t0 = std::chrono::steady_clock::now();
+
+    for (int i = 0; i < N; ++i) {
+      futs.emplace_back(std::async(std::launch::async, [&client, i] {
+        if (i % 3 == 0) {
+          return client.call("ping", json::object(), 1000);
+        } else if (i % 3 == 1) {
+          return client.call("add", json{{"a", i}, {"b", 2}}, 1000);
+        } else {
+          // short sleep so it usually succeeds
+          return client.call("sleep", json{{"ms", 50}}, 500);
+        }
+      }));
+    }
+
+    int ok_cnt = 0, timeout_cnt = 0, err_cnt = 0;
+    for (int i = 0; i < N; ++i) {
+      RpcResult r = futs[i].get();
+      if (r.ok) {
+        ok_cnt++;
+      } else if (r.error.code == static_cast<int>(RpcErrc::kTimeout)) {
+        timeout_cnt++;
+      } else {
+        err_cnt++;
+      }
+    }
+
+    auto t1 = std::chrono::steady_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+
+    std::cout << "[parent] concurrent demo: N=" << N
+              << " ok=" << ok_cnt
+              << " timeout=" << timeout_cnt
+              << " err=" << err_cnt
+              << " elapsed_ms=" << ms
+              << "\n";
+  }
+
+  client.stop();   // stops recv thread and closes socket
   net_cleanup();
   return 0;
 }
