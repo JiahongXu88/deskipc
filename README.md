@@ -62,6 +62,23 @@ build\examples\parent_cli\Debug\parent_cli.exe
 ```
 ---
 
+## Run Tests
+
+To run the tests locally, use the following command:
+
+#### Linux / macOS
+```bash
+ctest --test-dir build -C Debug --output-on-failure
+```
+
+#### Windows(MSVC)
+```bash
+ctest --test-dir build --output-on-failure
+```
+This command will run all the tests in the build directory and show output on failure.
+
+---
+
 ## Wire format (v0.2)
 **FrameHeader (32 bytes)**
 
